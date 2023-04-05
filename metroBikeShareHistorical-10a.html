@@ -1,0 +1,2818 @@
+<html>
+<!--
+    -----------    Program Description    -------------
+
+    The application uses the ArcGIS Online Javascript API 4.14.
+
+    There are 16 feature layers (all hosted through the team's ArcGIS account). 
+
+    Layers include stats for starting and ending trips for Q3 of metro historical data.
+
+    The user may select general overview of the stats for the quarter or break stats down by day of the week using the UI.
+
+    
+    -----------     Program Structure    -------------
+    
+    css/style
+    arcade scripts
+    arcgis script
+        arcade expressions
+        renders
+        popup template for overview layers
+        overview feature layers
+        popup template for individual days
+        individual day feature layers
+        map, view, legend implementation
+        functions for highlighting markers on mouse hover
+        event listener for radio buttons and calling of functions to hide/unhide layers
+        event listener for dropdown menu and calling of functions to hide/unhide layers
+        functions for hiding/unhiding layers
+        html body with radio button and drowndown menu
+-->
+
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="initial-scale=1, maximum-scale=1, user-scalable=no">
+    <title>Metro Bike Share Historical Data</title>
+    <style>
+        html,
+
+        body {
+            padding: 0;
+            margin: 0;
+            height: 100%;
+            width: 100%;
+        }
+
+        #viewDiv {
+            padding: 0;
+            margin: 0;
+            height: 100%;
+            width: 80%;
+            float: left;
+        }
+
+        #feature-node {
+            float: left;
+            width: 20%;
+            height: 100%;
+            padding: 1em;
+            overflow-y: hidden;
+        }
+
+        .padding {
+            text-align: left;
+            padding-top: 10px;
+        }
+
+        #menu {
+            margin-bottom: 150px;
+            padding-left: 15px;
+            padding-right: 15px;
+            padding-bottom: 15px;
+
+        }
+
+        .spacing {
+            line-height: 18pt;
+        }
+
+        .esri-legend__color-ramp {
+            height: 100px;
+        }
+
+        .esri-feature__media-item-title {
+            padding-left: 60px;
+            font-size: 10pt;
+        }
+    </style>
+
+    <link rel="stylesheet" href="https://js.arcgis.com/4.13/esri/themes/light/main.css">
+
+    <script src="https://js.arcgis.com/4.14/"></script>
+
+
+    <!--arcade expression in a separate script - returns the peak day of use for the general overview
+This is then used by the render to create visualization-->
+    <script type="text/plain" id="peak-day-arcade">
+
+var monday = $feature.monday_count/14;
+var tuesday = $feature.tuesday_count/13;
+var wednesday = $feature.wednesday_count/13;
+var thursday = $feature.thursday_count/13;
+var friday = $feature.friday_count/13;
+var saturday = $feature.saturday_count/13;
+var sunday = $feature.sunday_count/13;
+
+var days = [monday, tuesday, wednesday, thursday, friday, saturday, sunday];
+
+
+return Decode(Max(days),
+    monday, 'Monday',
+    tuesday, 'Tuesday',
+    wednesday, 'Wednesday',
+    thursday, 'Thursday',
+    friday, 'Friday',
+    saturday, 'Saturday',
+    sunday, 'Sunday',
+    'n/a');
+
+</script>
+
+    <!--arcade expression in a separate scrip - returns the day of hour of use for the general overview
+This is then used by the renderer to create visualization-->
+    <script type="text/plain" id="peak-hour-opacity-arcade">
+    var range_0 = $feature.time_range_0_count;
+    var range_3 = $feature.time_range_3_count;
+    var range_6 = $feature.time_range_6_count;
+    var range_9= $feature.time_range_9_count;
+    var range_12= $feature.time_range_12_count;
+    var range_15 = $feature.time_range_15_count;
+    var range_18 = $feature.time_range_18_count;
+    var range_21 = $feature.time_range_21_count;
+
+    var ranges = [range_0,range_3,range_6,range_9,range_12,range_15,range_18,range_21]
+
+    var returnRange = 1;
+
+    //Console(ranges)
+
+    var dominantRange = Decode(Max(ranges),
+    range_0, 'range_0',
+    range_3, 'range_3',
+    range_6, 'range_6',
+    range_9, 'range_9',
+    range_12,'range_12',
+    range_15,'range_15',
+    range_18,'range_18',
+    range_21,'range_21',
+    'n/a');
+
+    //Console(dominantRange);
+
+    //used to create the opacity ramp
+    if(dominantRange == "range_0"){
+        returnRange = 0;
+    } 
+    else if(dominantRange == "range_3"){
+        returnRange = 3;
+    }
+    else if(dominantRange == "range_6"){
+        returnRange = 6;
+    }
+    else if(dominantRange == "range_9"){
+        returnRange = 9;
+    }
+    else if(dominantRange == "range_12"){
+        returnRange = 12;
+    }
+    else if(dominantRange == "range_15"){
+        returnRange = 15;
+    }
+    else if(dominantRange == "range_18"){
+        returnRange = 18;
+    }
+    else if(dominantRange == "range_21"){
+        returnRange = 21;
+    }
+
+    //  Console(returnRange);
+
+    return returnRange;
+
+</script>
+
+    <!--arcade expression in a separate script- used for the general overview to display max time range in content text-->
+    <script type="text/plain" id="peak-hour-arcade">
+    var range_0 = $feature.time_range_0_count;
+    var range_3 = $feature.time_range_3_count;
+    var range_6 = $feature.time_range_6_count;
+    var range_9= $feature.time_range_9_count;
+    var range_12= $feature.time_range_12_count;
+    var range_15 = $feature.time_range_15_count;
+    var range_18 = $feature.time_range_18_count;
+    var range_21 = $feature.time_range_21_count;
+
+    var ranges = [range_0,range_3,range_6,range_9,range_12,range_15,range_18,range_21]
+
+//Console(ranges)
+
+return Decode(Max(ranges),
+    range_0, '12am - 3am',
+    range_3, '3am - 6am',
+    range_6, '6am - 9am',
+    range_9, '9am - 12pm',
+    range_12,'12pm - 3pm',
+    range_15,'3pm - 6pm',
+    range_18,'6pm - 9pm',
+    range_21,'9pm - 12am',
+    'n/a');
+
+</script>
+
+<script type="text/plain" id="net-change-arcade">
+    var netChange = 0;
+    var percent = 0;
+    var increase = 0;
+    var sign = "";
+
+    //increase 2016 - 2017
+    increase = $feature.count_q3_2017 - $feature.count_q3_2016;
+
+    if($feature.count_q3_2016 != 0){
+        percent = (increase / $feature.count_q3_2016) * 100;
+        netChange += percent;
+    }
+
+    //increase 2017 - 2018
+    increase = $feature.count_q3_2018 - $feature.count_q3_2017;
+
+    if($feature.count_q3_2017 != 0){
+        percent = (increase / $feature.count_q3_2017) * 100;
+        netChange += percent;
+    }
+
+    //increase 2018 - 2019
+    increase = $feature.start_count - $feature.count_q3_2018;
+
+    if($feature.count_q3_2018 != 0){
+        percent = (increase / $feature.count_q3_2018) * 100;
+        netChange += percent;
+    }
+
+    if(netChange >= 0)
+        sign = "+";
+
+
+    return sign + Round(netChange,1) + '%';
+
+</script>
+
+
+<script type="text/plain" id="net-change-ending-arcade">
+    var netChange = 0;
+    var percent = 0;
+    var increase = 0;
+    var sign = "";
+
+    //increase 2016 - 2017
+    increase = $feature.count_q3_2017 - $feature.count_q3_2016;
+
+    if($feature.count_q3_2016 != 0){
+        percent = (increase / $feature.count_q3_2016) * 100;
+        netChange += percent;
+    }
+
+    //increase 2017 - 2018
+    increase = $feature.count_q3_2018 - $feature.count_q3_2017;
+
+    if($feature.count_q3_2017 != 0){
+        percent = (increase / $feature.count_q3_2017) * 100;
+        netChange += percent;
+    }
+
+    //increase 2018 - 2019
+    increase = $feature.end_count - $feature.count_q3_2018;
+
+    if($feature.count_q3_2018 != 0){
+        percent = (increase / $feature.count_q3_2018) * 100;
+        netChange += percent;
+    }
+
+    if(netChange >= 0)
+        sign = "+";
+
+
+    return sign + Round(netChange,1) + '%';
+
+</script>
+
+
+
+
+  
+
+    <script type="text/javascript">
+        require([
+            "esri/Map",
+            "esri/views/MapView",
+            "esri/layers/FeatureLayer",
+            "esri/widgets/Search",
+            "esri/widgets/Legend",
+            "esri/widgets/Expand",
+            "esri/layers/GraphicsLayer",
+            "esri/Graphic",
+            "esri/widgets/LayerList",
+            "esri/widgets/Feature",
+            "esri/widgets/Search",
+        ], function (Map, MapView, FeatureLayer, Search, Legend, Expand, GraphicsLayer, Graphic, LayerList, Feature, Search) {
+
+            //allows access to the arcade expression scripts
+            const peakDayArcade = document.getElementById("peak-day-arcade").text;
+            const peakHourOpacityArcade = document.getElementById("peak-hour-opacity-arcade").text;
+            const peakHourArcade = document.getElementById("peak-hour-arcade").text;
+
+            const netChangeArcade = document.getElementById("net-change-arcade").text;
+            const netChangeEndingArcade = document.getElementById("net-change-ending-arcade").text;
+
+            //arcade expressions for used with the popup template on the feature layer
+            const arcadeExpressionsInfosOverviewStart = [
+                {
+                    name: "peak-day-arcade",
+                    title: "",
+                    expression: peakDayArcade,
+                },
+                {
+                    name: "peak-hour-arcade",
+                    title: "",
+                    expression: peakHourArcade,
+                },
+                //day percentage
+                {
+                    name: "%-monday-arcade",
+                    title: "Monday accounts for %",
+                    expression: "Round(($feature.monday_count / $feature.start_count)*100) + '%'"
+                },
+                {
+                    name: "%-tuesday-arcade",
+                    title: "Tuesday accounts for %",
+                    expression: "Round(($feature.tuesday_count / $feature.start_count)*100) + '%'"
+                },
+                {
+                    name: "%-wednesday-arcade",
+                    title: "Wednesday accounts for %",
+                    expression: "Round(($feature.wednesday_count / $feature.start_count)*100) + '%'"
+                },
+                {
+                    name: "%-thursday-arcade",
+                    title: "Thursday accounts for %",
+                    expression: "Round(($feature.thursday_count / $feature.start_count)*100) + '%'"
+                },
+                {
+                    name: "%-friday-arcade",
+                    title: "Friday accounts for %",
+                    expression: "Round(($feature.friday_count / $feature.start_count)*100) + '%'"
+                },
+                {
+                    name: "%-saturday-arcade",
+                    title: "Saturday accounts for %",
+                    expression: "Round(($feature.saturday_count / $feature.start_count)*100) + '%'"
+                },
+                {
+                    name: "%-sunday-arcade",
+                    title: "Sunday accounts for %",
+                    expression: "Round(($feature.sunday_count / $feature.start_count)*100) + '%'"
+                },
+                {
+                    name: "avg-monday-arcade",
+                    title: " Monday",
+                    expression: "$feature.monday_count / 14"
+                },
+                {
+                    name: "avg-tuesday-arcade",
+                    title: " Tuesday",
+                    expression: "$feature.tuesday_count / 13"
+                },
+                {
+                    name: "avg-wednesday-arcade",
+                    title: " Wednesday",
+                    expression: "$feature.wednesday_count / 13"
+                },
+                {
+                    name: "avg-thursday-arcade",
+                    title: " Thursday",
+                    expression: "$feature.thursday_count / 13"
+                },
+                {
+                    name: "avg-friday-arcade",
+                    title: "Friday",
+                    expression: "$feature.friday_count / 13"
+                },
+                {
+                    name: "avg-saturday-arcade",
+                    title: " Saturday",
+                    expression: "$feature.saturday_count / 13"
+                },
+                {
+                    name: "avg-sunday-arcade",
+                    title: "Sunday",
+                    expression: "$feature.sunday_count / 13"
+                },
+                //time counts
+                {
+                    name: "avg-time-arcade-0",
+                    title: "12am to 3am ",
+                    expression: "$feature.time_range_0_count"
+                },
+                {
+                    name: "avg-time-arcade-3",
+                    title: " 3am to 6am ",
+                    expression: "$feature.time_range_3_count"
+                },
+                {
+                    name: "avg-time-arcade-6",
+                    title: "6am to 9am ",
+                    expression: "$feature.time_range_6_count"
+                },
+                {
+                    name: "avg-time-arcade-9",
+                    title: "9am to 12pm ",
+                    expression: "$feature.time_range_9_count"
+                },
+                {
+                    name: "avg-time-arcade-12",
+                    title: " 12pm to 3pm ",
+                    expression: "$feature.time_range_12_count"
+                },
+                {
+                    name: "avg-time-arcade-15",
+                    title: " 3pm to 6pm ",
+                    expression: "$feature.time_range_15_count"
+                },
+                {
+                    name: "avg-time-arcade-18",
+                    title: " 6pm to 9pm",
+                    expression: "$feature.time_range_18_count"
+                },
+                {
+                    name: "avg-time-arcade-21",
+                    title: " 9pm to 12am ",
+                    expression: "$feature.time_range_21_count"
+                },
+            ];
+
+            const arcadeExpressionsInfosOverviewEnd = [
+                {
+                    name: "peak-day-arcade",
+                    title: "",
+                    expression: peakDayArcade,
+                },
+                {
+                    name: "peak-hour-arcade",
+                    title: "",
+                    expression: peakHourArcade,
+                },
+                //day percentage
+                {
+                    name: "%-monday-arcade",
+                    title: "Monday accounts for %",
+                    expression: "Round(($feature.monday_count / $feature.end_count)*100) + '%'"
+                },
+                {
+                    name: "%-tuesday-arcade",
+                    title: "Tuesday accounts for %",
+                    expression: "Round(($feature.tuesday_count / $feature.end_count)*100) + '%'"
+                },
+                {
+                    name: "%-wednesday-arcade",
+                    title: "Wednesday accounts for %",
+                    expression: "Round(($feature.wednesday_count / $feature.end_count)*100) + '%'"
+                },
+                {
+                    name: "%-thursday-arcade",
+                    title: "Thursday accounts for %",
+                    expression: "Round(($feature.thursday_count / $feature.end_count)*100) + '%'"
+                },
+                {
+                    name: "%-friday-arcade",
+                    title: "Friday accounts for %",
+                    expression: "Round(($feature.friday_count / $feature.end_count)*100) + '%'"
+                },
+                {
+                    name: "%-saturday-arcade",
+                    title: "Saturday accounts for %",
+                    expression: "Round(($feature.saturday_count / $feature.end_count)*100) + '%'"
+                },
+                {
+                    name: "%-sunday-arcade",
+                    title: "Sunday accounts for %",
+                    expression: "Round(($feature.sunday_count / $feature.end_count)*100) + '%'"
+                },
+                //day avgs
+                {
+                    name: "avg-monday-arcade",
+                    title: " Monday",
+                    expression: "$feature.monday_count / 14"
+                },
+                {
+                    name: "avg-tuesday-arcade",
+                    title: " Tuesday",
+                    expression: "$feature.tuesday_count / 13"
+                },
+                {
+                    name: "avg-wednesday-arcade",
+                    title: " Wednesday",
+                    expression: "$feature.wednesday_count / 13"
+                },
+                {
+                    name: "avg-thursday-arcade",
+                    title: " Thursday",
+                    expression: "$feature.thursday_count / 13"
+                },
+                {
+                    name: "avg-friday-arcade",
+                    title: "Friday",
+                    expression: "$feature.friday_count / 13"
+                },
+                {
+                    name: "avg-saturday-arcade",
+                    title: " Saturday",
+                    expression: "$feature.saturday_count / 13"
+                },
+                {
+                    name: "avg-sunday-arcade",
+                    title: "Sunday",
+                    expression: "$feature.sunday_count / 13"
+                },
+                //time counts
+                {
+                    name: "avg-time-arcade-0",
+                    title: "12am to 3am ",
+                    expression: "$feature.time_range_0_count"
+                },
+                {
+                    name: "avg-time-arcade-3",
+                    title: " 3am to 6am ",
+                    expression: "$feature.time_range_3_count"
+                },
+                {
+                    name: "avg-time-arcade-6",
+                    title: "6am to 9am ",
+                    expression: "$feature.time_range_6_count"
+                },
+                {
+                    name: "avg-time-arcade-9",
+                    title: "9am to 12pm ",
+                    expression: "$feature.time_range_9_count"
+                },
+                {
+                    name: "avg-time-arcade-12",
+                    title: " 12pm to 3pm ",
+                    expression: "$feature.time_range_12_count"
+                },
+                {
+                    name: "avg-time-arcade-15",
+                    title: " 3pm to 6pm ",
+                    expression: "$feature.time_range_15_count"
+                },
+                {
+                    name: "avg-time-arcade-18",
+                    title: " 6pm to 9pm",
+                    expression: "$feature.time_range_18_count"
+                },
+                {
+                    name: "avg-time-arcade-21",
+                    title: " 9pm to 12am ",
+                    expression: "$feature.time_range_21_count"
+                },
+            ];
+
+
+            //arcade expressions for used with the popup template on the feature layer
+            const arcadeExpressionsInfosUniqueDay = [
+                {
+                    name: "peak-hour-arcade",
+                    title: "",
+                    expression: peakHourArcade,
+                },
+                {
+                    name: "avg-time-arcade-0",
+                    title: "12am to 3am ",
+                    expression: "$feature.time_range_0_count"
+                },
+                {
+                    name: "avg-time-arcade-3",
+                    title: " 3am to 6am ",
+                    expression: "$feature.time_range_3_count"
+                },
+                {
+                    name: "avg-time-arcade-6",
+                    title: "6am to 9am ",
+                    expression: "$feature.time_range_6_count"
+                },
+                {
+                    name: "avg-time-arcade-9",
+                    title: "9am to 12pm ",
+                    expression: "$feature.time_range_9_count"
+                },
+                {
+                    name: "avg-time-arcade-12",
+                    title: " 12pm to 3pm ",
+                    expression: "$feature.time_range_12_count"
+                },
+                {
+                    name: "avg-time-arcade-15",
+                    title: " 3pm to 6pm ",
+                    expression: "$feature.time_range_15_count"
+                },
+                {
+                    name: "avg-time-arcade-18",
+                    title: " 6pm to 9pm",
+                    expression: "$feature.time_range_18_count"
+                },
+                {
+                    name: "avg-time-arcade-21",
+                    title: " 9pm to 12am ",
+                    expression: "$feature.time_range_21_count"
+                },
+                //time percentage
+                {
+                    name: "time-percentage-arcade-0",
+                    title: " 12am and 3am ",
+                    expression: "Round(($feature.time_range_0_count/$feature.start_count) * 100) +'%'"
+                },
+                {
+                    name: "time-percentage-arcade-3",
+                    title: "3am and 6am ",
+                    expression: "Round(($feature.time_range_3_count/$feature.start_count) * 100) +'%'"
+                },
+                {
+                    name: "time-percentage-arcade-6",
+                    title: "6am and 9am  ",
+                    expression: "Round(($feature.time_range_6_count/$feature.start_count) * 100) +'%'"
+                },
+                {
+                    name: "time-percentage-arcade-9",
+                    title: "9am and 12pm",
+                    expression: "Round(($feature.time_range_9_count/$feature.start_count) * 100) +'%'"
+                },
+
+                {
+                    name: "time-percentage-arcade-12",
+                    title: "12pm and 3pm",
+                    expression: "Round(($feature.time_range_12_count/$feature.start_count) * 100) +'%'"
+                },
+
+                {
+                    name: "time-percentage-arcade-15",
+                    title: "3pm and 6pm ",
+                    expression: "Round(($feature.time_range_15_count/$feature.start_count) * 100) +'%'"
+                },
+                {
+                    name: "time-percentage-arcade-18",
+                    title: "6pm and 9pm",
+                    expression: "Round(($feature.time_range_18_count/$feature.start_count) * 100) +'%'"
+                }, {
+                    name: "time-percentage-arcade-21",
+                    title: "9pm and 12am",
+                    expression: "Round(($feature.time_range_21_count/$feature.start_count) * 100) +'%'"
+                },
+                //day average
+                {
+                    name: "monday-avg-arcade",
+                    title: "",
+                    expression: "$feature.start_count /14"
+                },
+                {
+                    name: "other-day-avg-arcade",
+                    title: "",
+                    expression: "$feature.start_count /13"
+                }
+
+            ];
+
+
+            const arcadeExpressionsInfosUniqueDayEnd = [
+
+                {
+                    name: "peak-hour-arcade",
+                    title: "",
+                    expression: peakHourArcade,
+                },
+                {
+                    name: "avg-time-arcade-0",
+                    title: "12am to 3am ",
+                    expression: "$feature.time_range_0_count"
+                },
+                {
+                    name: "avg-time-arcade-3",
+                    title: " 3am to 6am ",
+                    expression: "$feature.time_range_3_count"
+                },
+                {
+                    name: "avg-time-arcade-6",
+                    title: "6am to 9am ",
+                    expression: "$feature.time_range_6_count"
+                },
+                {
+                    name: "avg-time-arcade-9",
+                    title: "9am to 12pm ",
+                    expression: "$feature.time_range_9_count"
+                },
+                {
+                    name: "avg-time-arcade-12",
+                    title: " 12pm to 3pm ",
+                    expression: "$feature.time_range_12_count"
+                },
+                {
+                    name: "avg-time-arcade-15",
+                    title: " 3pm to 6pm ",
+                    expression: "$feature.time_range_15_count"
+                },
+                {
+                    name: "avg-time-arcade-18",
+                    title: " 6pm to 9pm",
+                    expression: "$feature.time_range_18_count"
+                },
+                {
+                    name: "avg-time-arcade-21",
+                    title: " 9pm to 12am ",
+                    expression: "$feature.time_range_21_count"
+                },
+                //time percentage
+                {
+                    name: "time-percentage-arcade-0",
+                    title: " 12am and 3am ",
+                    expression: "Round(($feature.time_range_0_count/$feature.end_count) * 100) +'%'"
+                },
+                {
+                    name: "time-percentage-arcade-3",
+                    title: "3am and 6am ",
+                    expression: "Round(($feature.time_range_3_count/$feature.end_count) * 100) +'%'"
+                },
+                {
+                    name: "time-percentage-arcade-6",
+                    title: "6am and 9am  ",
+                    expression: "Round(($feature.time_range_6_count/$feature.end_count) * 100) +'%'"
+                },
+                {
+                    name: "time-percentage-arcade-9",
+                    title: "9am and 12pm",
+                    expression: "Round(($feature.time_range_9_count/$feature.end_count) * 100) +'%'"
+                },
+
+                {
+                    name: "time-percentage-arcade-12",
+                    title: "12pm and 3pm",
+                    expression: "Round(($feature.time_range_12_count/$feature.end_count) * 100) +'%'"
+                },
+
+                {
+                    name: "time-percentage-arcade-15",
+                    title: "3pm and 6pm ",
+                    expression: "Round(($feature.time_range_15_count/$feature.end_count) * 100) +'%'"
+                },
+                {
+                    name: "time-percentage-arcade-18",
+                    title: "6pm and 9pm",
+                    expression: "Round(($feature.time_range_18_count/$feature.end_count) * 100) +'%'"
+                }, {
+                    name: "time-percentage-arcade-21",
+                    title: "9pm and 12am",
+                    expression: "Round(($feature.time_range_21_count/$feature.end_count) * 100) +'%'"
+                },
+                //day average
+                {
+                    name: "monday-avg-arcade",
+                    title: "",
+                    expression: "$feature.end_count /14"
+                },
+                {
+                    name: "other-day-avg-arcade",
+                    title: "",
+                    expression: "$feature.end_count /13"
+                }
+
+            ];
+
+
+            const defaultSym = {
+                type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+                //: [0, 0, 0, 0],
+                color: "0A7766",
+                outline: {
+                    // autocasts as new SimpleLineSymbol()
+                    color: "#71de6e",
+                    width: 1
+                }
+            };
+
+            //function for creating the marker symbols
+            function createSymbol(color) {
+                return {
+                    type: "simple-marker", // autocasts as new SimpleMarkerSymbol()
+                    color: color,
+                    outline: {
+                        width: 0.5,
+                        //color: ["#71de6e"]
+                        color: ("gray")
+                    }
+                };
+            }
+
+            //render used by the general overview layer
+            //note the use of the peakDayArcade to drive the visualizations
+            const renderer = {
+                type: "unique-value", // autocasts as new SimpleRenderer()
+                valueExpression: peakDayArcade,
+                valueExpressionTitle: "Day of Most Frequent Use (based on average number of trips per day)",
+                //what's returned from peakDayArcade determines color of station marker
+                uniqueValueInfos: [
+                    {
+
+                        value: "Monday",
+                        // symbol: createSymbol("#e6eecf"), //ramp_2
+                        // symbol: createSymbol("#011C3A"), //ramp_1
+                        // symbol: createSymbol("#5CAEA2"),//ramp_3
+                        symbol: createSymbol("#61AE9C"),//ramp_3
+                        //symbol: createSymbol("#91307D"),//ramp_4
+                        label: "Monday"
+                    },
+                    {
+                        value: "Tuesday",
+                        // symbol: createSymbol("#b4d2c6"),
+                        // symbol: createSymbol("#006352"),
+                        // symbol: createSymbol("#0EB48C"),
+
+                        symbol: createSymbol("#61AE76"),
+                        label: "Tuesday",
+                    },
+                    {
+                        value: "Wednesday",
+                        //  symbol: createSymbol("#82b6bc"),
+                        //  symbol: createSymbol("#008C15"),
+                        symbol: createSymbol("#A2D05C"),
+                        // symbol: createSymbol("#FB1392"),
+                        label: "Wednesday",
+                    },
+                    {
+                        value: "Thursday",
+                        //  symbol: createSymbol("#69a8b7"),
+                        // symbol: createSymbol("#07FFA4"),
+                        symbol: createSymbol("#E7F317"),
+                        // symbol: createSymbol("#FF556C"),
+                        label: "Thursday",
+                    },
+                    {
+                        value: "Friday",
+                        // symbol: createSymbol("#5a93a8"),
+                        // symbol: createSymbol("#35BFFF"),
+                        symbol: createSymbol("#FFE700"),
+                        //symbol: createSymbol("#FF9150"),
+                        label: "Friday",
+                    },
+                    {
+                        value: "Saturday",
+                        //  symbol: createSymbol("#3d6a89"),
+                        // symbol: createSymbol("#6060FF"),
+                        symbol: createSymbol("#FFAE00"),
+                        //symbol: createSymbol("#FFC84D"),
+                        label: "Saturday",
+                    },
+                    {
+                        value: "Sunday",
+                        // symbol: createSymbol("#1f406a"),
+                        // symbol: createSymbol("#D987FF"),
+                        symbol: createSymbol("#FF8095"),
+                        //symbol: createSymbol("#F9F871"),
+                        label: "Sunday",
+                    },
+                ],
+
+            };
+
+            //opacity ramp for time as determined by return peakHourOpacityArcade
+            const opacityVisualVariable = {
+                type: "opacity",
+                valueExpression: peakHourOpacityArcade,
+                valueExpressionTitle: "Hours of Most Frequent Use",
+                stops: [
+                    { value: 0, opacity: 0.25, label: "12am" },
+                    { value: 3, opacity: 0.35, label: "" },
+                    { value: 6, opacity: 0.5, label: "" },
+                    { value: 9, opacity: 0.65, label: "" },
+                    { value: 12, opacity: 0.75, label: "" },
+                    { value: 15, opacity: 0.85, label: "" },
+                    { value: 18, opacity: 0.95, label: "" },
+                    { value: 21, opacity: 1.0, label: "11:59pm" },
+                ],
+            };
+
+            //size ramp based on start_count field
+            let sizeVisualVariable = {
+                type: "size",
+                field: "start_count",
+                legendOptions: {
+                    title: "Total Number of Trips Originating at Station"
+                },
+                minDataValue: 100,
+                maxDataValue: 4000,
+                minSize: 10,
+                maxSize: 35
+            };
+
+            renderer.visualVariables = [opacityVisualVariable, sizeVisualVariable]
+
+
+
+            //renderer for individual days
+            const rendererUniqueDay = {
+                type: "unique-value", // autocasts as new SimpleRenderer()
+                //whats returned from the peakHourUniqueDayArcade determines color of station marker
+                valueExpression: peakHourArcade,
+                valueExpressionTitle: "Hours of Most Frequent Use",
+                uniqueValueInfos: [
+                    {
+                        value: "12am - 3am",
+                        symbol: createSymbol("#110B64"),
+                        label: "12am - 3am"
+                    }, {
+                        value: "3am - 6am",
+                        symbol: createSymbol("#640B5E"),
+                        label: "3am - 6am",
+                    }, {
+                        value: "6am - 9am",
+                        symbol: createSymbol("#B617AC"),
+                        label: "6am - 9am"
+                    }, {
+                        value: "9am - 12pm",
+                        symbol: createSymbol("#F39BB7"),
+                        label: "9am - 12pm",
+                    }, {
+                        value: "12pm - 3pm",
+                        symbol: createSymbol("#9BE3F3"),
+                        label: "12pm - 3pm"
+                    }, {
+                        value: "3pm - 6pm",
+                        symbol: createSymbol("#1E96E0"),
+                        label: "3pm - 6pm",
+                    }, {
+                        value: "6pm - 9pm",
+                        symbol: createSymbol("#381EDF"),
+                        label: "6pm - 9pm"
+                    }, {
+                        value: "9pm - 12am",
+                        symbol: createSymbol("#631DB8"),
+                        label: "9pm - 12am",
+                    },
+                ],
+            };
+
+            //adding slight, uniform opacity
+            let opacityVisualVariableUnique = {
+                type: "opacity",
+                field: "start_count",
+                legendOptions: {
+                    showLegend: false,
+                },
+                stops: [
+                    { value: 0, opacity: 0.9 },
+                    { value: 100, opacity: 0.9 },
+                ],
+            };
+
+            //size of station marker based on the start_count field
+            let sizeVisualVariableUnqiue = {
+                type: "size",
+                field: "start_count",
+                legendOptions: {
+                    title: "Number of trips started at station"
+                },
+                minDataValue: 50,
+                maxDataValue: 300,
+                minSize: 10,
+                maxSize: 25
+            };
+
+            //add visual variables to the rendererUniqueDay
+            rendererUniqueDay.visualVariables = [opacityVisualVariableUnique, sizeVisualVariableUnqiue];
+
+
+
+            /*****************************     setup popup template for overview layer        ************************************/
+
+            let title = "Station: {start_station} <br>Station Name: {station_name} <br>Status: {status}";
+
+            const chartOverview = {
+                type: "media",
+                mediaInfos: [{
+                    title: "<b>Count of Trips by Day Averages</b>",
+                    caption: "Monday, Tuesday, Wednesday, Thursday, Friday, Saturday, Sunday",
+                    type: "column-chart",
+                    value: {
+                        fields: ["expression/avg-monday-arcade", "expression/avg-tuesday-arcade", "expression/avg-wednesday-arcade",
+                            "expression/avg-thursday-arcade", "expression/avg-friday-arcade", "expression/avg-saturday-arcade", "expression/avg-sunday-arcade"],
+                        normalizeField: null,
+                    }
+                    },{
+                    title: "<b>Station Usage by Quarters</b>",
+                    caption: "Q3 2016 - Q3 2019",
+                    type: "line-chart",
+                    value: {
+                        fields: ["count_q3_2016", "count_q4_2016","count_q1_2017","count_q2_2017","count_q3_2017",
+                            "count_q4_2017", "count_q1_2018", "count_q2_2018", "count_q3_2018", "count_q4_2018",
+                            "count_q1_2019", "count_q2_2019", "start_count" ,"trip_counts" ],
+                        normalizeField: null,
+                    }
+                }]
+            };
+
+
+            let contentText1 = {
+                type: "text",
+                text:
+                    ""
+            };
+
+            const contentFieldsAvgDayArcade = {
+                type: "fields",
+                fieldInfos: [{
+                    fieldName: "expression/avg-monday-arcade",
+                    label: "Monday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-tuesday-arcade",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-wednesday-arcade",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-thursday-arcade",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-friday-arcade",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-saturday-arcade",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-sunday-arcade",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }],
+            };
+
+            let contentText2 = {
+                type: "text",
+                text: " <b>Count of trips originating within the specified range of time:</b>"
+            };
+
+            const contentFieldsTimeArcade = {
+                type: "fields",
+                fieldInfos: [{
+                    fieldName: "expression/avg-time-arcade-0",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-3",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-6",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-9",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-12",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-15",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-18",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-21",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }],
+            };
+
+
+            //popup template variable for Overview
+            let popupTemplateOverview = {
+                title: title,
+                //fieldInfos outside of content to provide label for arcade expression used in the chart
+                fieldInfos: [{
+                    fieldName: "expression/avg-monday-arcade",
+                    visible: false,
+                    label: "Monday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-tuesday-arcade",
+                    visible: false,
+                    label: "Tuesday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-wednesday-arcade",
+                    visible: false,
+                    label: "Wednesday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-thursday-arcade",
+                    visible: false,
+                    label: "Thursday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-friday-arcade",
+                    visible: false,
+                    label: "Friday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-saturday-arcade",
+                    visible: false,
+                    label: "Saturday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-sunday-arcade",
+                    visible: false,
+                    label: "Sunday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "expression/avg-sunday-arcade",
+                    visible: false,
+                    label: "Sunday Avg",
+                    format: {
+                        digitSeparator: true,
+                        places: 2
+                    }
+                }, {
+                    fieldName: "count_q3_2016",
+                    visible: false,
+                    label: "Q3 2016",
+                }, {
+                    fieldName: "count_q4_2016",
+                    visible: false,
+                    label: "Q4 2016",
+                }, {
+                    fieldName: "count_q1_2017",
+                    visible: false,
+                    label: "Q1 2017",
+                }, {
+                    fieldName: "count_q2_2017",
+                    visible: false,
+                    label: "Q2 2017",
+                }, {
+                    fieldName: "count_q3_2017",
+                    visible: false,
+                    label: "Q3 2017",
+                }, {
+                    fieldName: "count_q4_2017",
+                    visible: false,
+                    label: "Q4 2017",
+                }, {
+                    fieldName: "count_q1_2018",
+                    visible: false,
+                    label: "Q1 2018",
+                }, {
+                    fieldName: "count_q2_2018",
+                    visible: false,
+                    label: "Q2 2018",
+                }, {
+                    fieldName: "count_q3_2018",
+                    visible: false,
+                    label: "Q3 2018",
+                }, {
+                    fieldName: "count_q4_2018",
+                    visible: false,
+                    label: "Q4 2018",
+                }
+                , {
+                    fieldName: "count_q1_2019",
+                    visible: false,
+                    label: "Q1 2019",
+                }, {
+                    fieldName: "count_q2_2019",
+                    visible: false,
+                    label: "Q2 2019",
+                }, {
+                    fieldName: "start_count",
+                    visible: false,
+                    label: "Q3 2019",
+                }
+                
+                ],
+            };
+
+
+
+            //add content to the popuptemplateOverview variable //chartOverview,
+            popupTemplateOverview.content = [chartOverview, contentText1, contentFieldsAvgDayArcade, contentText2, contentFieldsTimeArcade];
+
+
+
+
+
+
+            /*************              set up popup template for day layers           *****************/
+
+            const arcadeDay = arcadeExpressionsInfosUniqueDay;
+
+            const chartDay = {
+                type: "media",
+                mediaInfos: [{
+                    title: "<b>Count of Trips by 3hr Increments</b>",
+                    caption: "12am, 3am, 6am, 9am, 12pm, 3pm, 6pm, 9pm",
+                    type: "column-chart",
+                    value: {
+                        fields: ["time_range_0_count", "time_range_3_count", "time_range_6_count", "time_range_9_count",
+                            "time_range_12_count", "time_range_15_count", "time_range_18_count", "time_range_21_count"],
+                        normalizeField: null,
+                    }
+                }]
+            };
+
+            let contentTextTimePercentage = {
+                //"text" is the paragraph above the table in the popup
+                type: "text",
+                text:
+                    "<b>Time Range Percentages:</b>"
+            };
+
+
+            const contentFieldInfosTimePercentage = {
+                //"fieldInfos" is an array showing data in the table
+                type: "fields",
+                fieldInfos: [{
+                    //references an arcade expression calculation 
+                    fieldName: "expression/time-percentage-arcade-0",
+                    label: "12 - 3am",
+                }, {
+                    fieldName: "expression/time-percentage-arcade-3",
+                    label: "3am - 6am",
+
+                }, {
+                    fieldName: "expression/time-percentage-arcade-6",
+                    label: "6am - 9am",
+
+                }, {
+                    fieldName: "expression/time-percentage-arcade-9",
+                    label: "9am - 12pm",
+
+                }, {
+                    fieldName: "expression/time-percentage-arcade-12",
+                    label: "12pm - 3pm",
+
+                }, {
+                    fieldName: "expression/time-percentage-arcade-15",
+                    label: "3pm - 6pm",
+
+                }, {
+                    fieldName: "expression/time-percentage-arcade-18",
+                    label: "6pm - 9pm",
+
+                }, {
+                    fieldName: "expression/time-percentage-arcade-21",
+                    label: "9pm - 12am",
+
+                }],
+            };
+
+            const contentTextTimeCount = {
+                type: "text",
+                text:
+                    "<b> Count of trips originating within specified range of time:</b>"
+            };
+
+            const contentFieldInfosTime = {
+                //"fieldInfos" is an array showing data in the table
+                type: "fields",
+                fieldInfos: [{
+                    //references an arcade expression calculation 
+                    fieldName: "expression/avg-time-arcade-0",
+                    label: "12 - 3am",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-3",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-6",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-9",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-12",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-15",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-18",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }, {
+                    fieldName: "expression/avg-time-arcade-21",
+                    format: {
+                        digitSeparator: true,
+                        places: 0
+                    }
+                }],
+            };
+
+            let contentTextDay = {
+                type: "text",
+                text:
+                    ""
+            };
+
+            let popupTemplateDay = {
+                // autocasts as new PopupTemplate()
+                title: title,
+                //fieldInfos outside of content to provide label for fields used in the chart
+                fieldInfos: [{
+                    fieldName: "time_range_0_count",
+                    visible: false,
+                    label: "12am - 3am"
+                }, {
+                    fieldName: "time_range_3_count",
+                    visible: false,
+                    label: "3am - 6am"
+                }, {
+                    fieldName: "time_range_6_count",
+                    visible: false,
+                    label: "6am - 9am"
+                }, {
+                    fieldName: "time_range_9_count",
+                    visible: false,
+                    label: "9am - 12pm"
+                }, {
+                    fieldName: "time_range_12_count",
+                    visible: false,
+                    label: "12pm - 3pm"
+                }, {
+                    fieldName: "time_range_15_count",
+                    visible: false,
+                    label: "3pm - 6pm"
+                }, {
+                    fieldName: "time_range_18_count",
+                    visible: false,
+                    label: "6pm - 9pm"
+                }, {
+                    fieldName: "time_range_21_count",
+                    visible: false,
+                    label: "9pm - 12am"
+                }],
+                //allows the fieldName of fieldinfos to referenece arcade expression at beginning of script
+                expressionInfos: arcadeDay,
+            };
+
+            //add content elements to content array in the popuptemplate
+            popupTemplateDay.content = [chartDay, contentTextDay, contentTextTimePercentage, contentFieldInfosTimePercentage,
+                contentTextTimeCount, contentFieldInfosTime];
+
+            function createTextSymbol(color) {
+                return {
+                    type: "text", // autocasts as new TextSymbol()
+                    font: {
+                        size: 10,
+                        weight: "normal"
+                    },
+                    color: "#455554",
+                    haloColor: color,
+                    haloSize: .1
+                };
+            }
+
+
+            const goLiveDateArcade = "Month($feature.go_live_date) + 1 + '/'  + Day($feature.go_live_date) + '/' + Year($feature.go_live_date)";
+
+            const goLiveDateClass = {
+                labelExpressionInfo: {
+                    expression: goLiveDateArcade
+                },
+                labelPlacement: "above-center",
+            };
+
+            const testArcade =  " ((($feature.start_count_q3_2017 - $feature.start_count_q3_2016) / $feature.start_count_q3_2016) * 100)";
+
+           // const testArcade = "$feature.start_count_q3_2018";
+
+
+
+            goLiveDateClass.symbol = createTextSymbol("#455554");
+
+            const netChangeClass = {
+                labelExpressionInfo: {
+                    //expression: testArcade
+                    expression: netChangeArcade
+                },
+                labelPlacement: "below-center",
+            };
+            netChangeClass.symbol = createTextSymbol("#white")
+
+            const netChangeEndingClass = {
+                labelExpressionInfo: {
+                    //expression: testArcade
+                    expression: netChangeEndingArcade
+                   
+                },
+                labelPlacement: "below-center",
+            };
+            netChangeEndingClass.symbol = createTextSymbol("#white")
+
+
+                /******************      starting stations overview      **********************/
+                contentText1 = {
+                    type: "text",
+                    text:
+                        
+                        "There were <b>{start_count}</b> trips originating at this station. <br><br>" +
+                        "The peak day for originating trips is <b>{expression/peak-day-arcade}</b>. <br><br>" +
+                        "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br><br>" +
+                        "<b>Average number of trips by day of the week:</b> "
+                };
+
+            popupTemplateOverview.content[1] = contentText1;
+
+            //arcade expression to reference in popup template
+            popupTemplateOverview.expressionInfos = arcadeExpressionsInfosOverviewStart;
+
+            //overview Start stations layer
+            const metroBikeStationsLayer = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_final/FeatureServer",
+                renderer: renderer,
+                outFields: ["*"],
+                title: "Metro Bike Share Q3 2019 Historical Data",
+                popupTemplate: popupTemplateOverview,
+                labelingInfo: [goLiveDateClass, netChangeClass]
+            });
+
+
+
+
+            /******************      ending stations overview      **********************/
+            title = "Station: {end_station} <br>Station Name: {station_name} <br>Status: {status}";
+;
+
+            contentText1 = {
+                type: "text",
+                text:
+                    "There were <b>{end_count}</b> trips ending at this station. <br><br>" +
+                    "The peak day for ending trips is <b>{expression/peak-day-arcade}</b>. <br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br><br>" +
+                    "<b>Average number of trips by day of the week:</b> "
+            };
+
+            popupTemplateOverview.title = title;
+            popupTemplateOverview.content[1] = contentText1;
+
+
+            //arcade expression to reference in popup template
+            popupTemplateOverview.expressionInfos = arcadeExpressionsInfosOverviewEnd;
+
+            //size ramp based on end_count field
+            sizeVisualVariable = {
+                type: "size",
+                field: "end_count",
+                legendOptions: {
+                    title: "Total Number of Trips Ending at Station"
+                },
+                minDataValue: 100,
+                maxDataValue: 4000,
+                minSize: 10,
+                maxSize: 35
+            };
+
+            renderer.visualVariables[1] = sizeVisualVariable;
+
+            //overview End Stations layer
+            const metroBikeStationsLayerEnd = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_end_final/FeatureServer",
+                renderer: renderer,
+                visible: false,
+                outFields: ["*"],
+                title: "Metro Bike Share Q3 2019 Historical Data",
+                popupTemplate: popupTemplateOverview,
+                labelingInfo: [goLiveDateClass, netChangeEndingClass]
+            });
+
+
+
+
+            /*******************    Monday     ***********************************/
+            //update contentTextDay for Monday Layer Start
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{start_count}</b> trips originated on Mondays. <br><br>" +
+                    "There's an average of <b>{expression/monday-avg-arcade}</b> trips on Monday.<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            const mondayLayer = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_monday/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Mondays",
+                popupTemplate: popupTemplateDay,
+            });
+
+
+            /*******************    Tuesday ***********************************/
+            //update contentTextDay for Tuesday Layer
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{start_count}</b> trips originated on Tuesdays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> trips on Tuesday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            //tuesday layer
+            const tuesdayLayer = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_tuesday/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Tuesdays",
+                popupTemplate: popupTemplateDay,
+            });
+
+
+
+            /*******************    Wednesday   ***********************************/
+            //update contentTextDay for Wednesday Layer
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{start_count}</b> trips originated on Wednesdays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> trips on Wednesday.<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            //wednesday layer
+            const wednesdayLayer = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_wednesday/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Wednesdays",
+                popupTemplate: popupTemplateDay,
+            });
+
+
+
+            /*******************    Thursday   ***********************************/
+            //update contentTextDay for thursday Layer
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{start_count}</b> trips originated on Thursdays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> trips on Thursday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            //thursday layer
+            const thursdayLayer = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_thursday/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Thursdays",
+                popupTemplate: popupTemplateDay,
+            });
+
+
+
+            /*******************    Friday   ***********************************/
+            //update contentTextDay for thursday Layer
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{start_count}</b> trips originated on Fridays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> trips on Friday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            //friday layer
+            const fridayLayer = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_friday/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Fridays",
+                popupTemplate: popupTemplateDay,
+            });
+
+
+
+            /*******************    Saturday   ***********************************/
+            //update contentTextDay for saturday Layer
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{start_count}</b> trips originated on Saturdays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> trips on Saturday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            //saturday layer
+            const saturdayLayer = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_saturday/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Saturdays",
+                popupTemplate: popupTemplateDay,
+            });
+
+            /*******************    Sunday  ***********************************/
+            //update contentTextDay for sunday Layer
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{start_count}</b> trips originated on Sunday. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> trips on Sunday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            //sunday layer
+            const sundayLayer = new FeatureLayer({
+                url: "https://services8.arcgis.com/XPBnFDPeYCnzbHGt/arcgis/rest/services/bike_share_master_sunday/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Sundays",
+                popupTemplate: popupTemplateDay,
+            });
+
+
+
+
+            /**********************      ending layers  ********************************************/
+            //adding slight, uniform opacity
+            opacityVisualVariableUnique = {
+                type: "opacity",
+                field: "end_count",
+                legendOptions: {
+                    showLegend: false,
+                },
+                stops: [
+                    { value: 0, opacity: 0.9 },
+                    { value: 100, opacity: 0.9 },
+                ],
+            };
+
+            //size of station marker based on the end_count field
+            sizeVisualVariableUnique = {
+                type: "size",
+                field: "end_count",
+                legendOptions: {
+                    title: "Number of trips ending at station"
+                },
+                minDataValue: 50,
+                maxDataValue: 300,
+                minSize: 10,
+                maxSize: 25
+            };
+
+            rendererUniqueDay.visualVariables = [opacityVisualVariableUnique, sizeVisualVariableUnique];
+
+            //update popup template for ending trips
+
+            popupTemplateDay.content[2] = contentTextTimePercentage
+
+            /*******************    monday - end   ***********************************/
+
+            //update contentTextDay for Monday Layer End
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{end_count}</b> trips ended on Mondays. <br><br>" +
+                    "There's an average of <b>{expression/monday-avg-arcade}</b> trips on Monday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            popupTemplateDay.expressionInfos = arcadeExpressionsInfosUniqueDayEnd;
+
+            const mondayLayerEnd = new FeatureLayer({
+                url: "https://services6.arcgis.com/gL8apIToHKNgxu2m/arcgis/rest/services/bike_share_master_monday_end_/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Mondays",
+                popupTemplate: popupTemplateDay,
+            });
+
+            /*******************    tuesday - end    ***********************************/
+
+            //update contentTextDay for Tuesday Layer End
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{end_count}</b> trips ended on Tuesdays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> ending trips on Tuesdays<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            const tuesdayLayerEnd = new FeatureLayer({
+                url: "https://services6.arcgis.com/gL8apIToHKNgxu2m/arcgis/rest/services/bike_share_master_tuesday_end_/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Tuesday",
+                popupTemplate: popupTemplateDay,
+            });
+
+            /*******************   wednesday - end    ***********************************/
+            //update contentTextDay for Wednesday Layer End
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{end_count}</b> trips ended on Wednesdays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> ending trips per Wednesday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            const wednesdayLayerEnd = new FeatureLayer({
+                url: "https://services6.arcgis.com/gL8apIToHKNgxu2m/arcgis/rest/services/bike_share_master_wednesday_end/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Wednesday",
+                popupTemplate: popupTemplateDay,
+            });
+
+            /*******************   thursday - end    ***********************************/
+            //update contentTextDay for Thursday Layer End
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{end_count}</b> trips ended on Thursdays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> ending trips per Thursday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            const thursdayLayerEnd = new FeatureLayer({
+                url: "https://services6.arcgis.com/gL8apIToHKNgxu2m/arcgis/rest/services/bike_share_master_thursday_end/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Tuesday",
+                popupTemplate: popupTemplateDay,
+            });
+
+            /*******************    friday - end    ***********************************/
+            //update contentTextDay for Friday Layer End
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{end_count}</b> trips ended on Fridays. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> ending trips per Friday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            const fridayLayerEnd = new FeatureLayer({
+                url: "https://services6.arcgis.com/gL8apIToHKNgxu2m/arcgis/rest/services/bike_share_master_friday_end/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Friday",
+                popupTemplate: popupTemplateDay,
+            });
+
+            /*******************    saturday - end    ***********************************/
+            //update contentTextDay for saturday Layer End
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{end_count}</b> trips ended on Saturday. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> ending trips per Saturday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            const saturdayLayerEnd = new FeatureLayer({
+                url: "https://services6.arcgis.com/gL8apIToHKNgxu2m/arcgis/rest/services/bike_share_master_saturday_end/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Saturday",
+                popupTemplate: popupTemplateDay,
+            });
+
+            /*******************    sunday - end    ***********************************/
+            //update contentTextDay for sunday Layer End
+            contentTextDay = {
+                type: "text",
+                text:
+                    "A total of <b>{end_count}</b> trips ended on Sunday. <br><br>" +
+                    "There's an average of <b>{expression/other-day-avg-arcade}</b> ending trips per Sunday<br><br>" +
+                    "The peak hours are <b>{expression/peak-hour-arcade}</b>. <br>"
+            };
+            popupTemplateDay.content[1] = contentTextDay;
+
+            const sundayLayerEnd = new FeatureLayer({
+                url: "https://services6.arcgis.com/gL8apIToHKNgxu2m/arcgis/rest/services/bike_share_master_sunday_end/FeatureServer",
+                renderer: rendererUniqueDay,
+                visible: false,
+                outFields: ["*"],
+                title: "Historical Data for Sunday",
+                popupTemplate: popupTemplateDay,
+            });
+
+
+
+
+            /**********************      create Map   ********************************************/
+            //create the map and add all layers
+            const map = new Map({
+                basemap: "gray",
+                // layers: [metroBikeStationsLayer, mondayLayer, tuesdayLayer, wednesdayLayer, thursdayLayer, fridayLayer, saturdayLayer, sundayLayer]
+                layers: [metroBikeStationsLayer, mondayLayer, tuesdayLayer, wednesdayLayer, thursdayLayer, fridayLayer, saturdayLayer, sundayLayer,
+                    mondayLayerEnd, tuesdayLayerEnd, wednesdayLayerEnd, thursdayLayerEnd, fridayLayerEnd, saturdayLayerEnd, sundayLayerEnd, metroBikeStationsLayerEnd]
+            });
+
+
+            /**********************      create Map View     ********************************************/
+            const view = new MapView({
+                //references div in html body as the container to display the map
+                container: "viewDiv",
+                map: map,
+                center: [-118.243683, 34.052235],
+                zoom: 14,
+                highlightOptions: {
+                    fillOpacity: 0.5,
+                    haloOpacity: 0.9,
+                    haloColor: "white",
+                },
+                popup: {
+                    dockEnabled: true,
+                    dockOptions: {
+                        breakpoint: false,
+                        position: "top-right"
+                    }
+                },
+                constraints: {
+                    minZoom: 10
+                }
+            });
+
+            //creates the legend.
+            //Since only one legend is created, it will automatically update to the currently visible layer
+            const legend = new Legend({
+                view: view,
+                type: "card",
+            });
+
+            const searchWidget = new Search({
+                view: view,
+                allPlaceholder: "Station Number or Name",
+                popupEnabled: false,
+                sources: [
+                    {
+                        layer: metroBikeStationsLayer,
+                        suggestionTemplate: "Station Number: {start_station}",
+                        searchFields: ["start_station"],
+                        displayField: "start_station",
+                        exactMatch: false,
+                        outFields: ["start_station"],
+                        name: "Station Number",
+                        placeholder: "example: 3708",
+                        zoomScale: 5000
+                    }, {
+                        layer: metroBikeStationsLayer,
+                        suggestionTemplate: "Station Name: {station_name}",
+                        searchFields: ["station_name"],
+                        displayField: "station_name",
+                        exactMatch: false,
+                        outFields: ["station_name"],
+                        name: "Station Name",
+                        placeholder: "Traction & Rose",
+                        zoomScale: 5000
+                    }
+                ]
+            });
+
+            //add the html drop down menu (id="menu") and the legend to the view
+            view.ui.add([{
+                component: "menu",
+                position: "top-right",
+                index: 0
+            }, {
+                component: searchWidget,
+                position: "top-left",
+                index: 0
+            },
+
+            {
+                component: legend,
+                position: "bottom-right",
+                index: 0
+            }]);
+
+
+            view.when().then(function () {
+                // Create a default graphic for when the application starts
+                const graphic = {
+                    popupTemplate: {
+                        content: "Mouse over features to show details..."
+                    }
+                };
+
+                // Provide graphic to a new instance of a Feature widget
+                const feature = new Feature({
+                    container: "feature-node",
+                    graphic: graphic,
+                    map: view.map,
+                    spatialReference: view.spatialReference
+                });
+
+
+                view.whenLayerView(mondayLayer).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(tuesdayLayer).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(wednesdayLayer).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(thursdayLayer).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(fridayLayer).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(saturdayLayer).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(sundayLayer).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(metroBikeStationsLayer).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(metroBikeStationsLayerEnd).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+
+                view.whenLayerView(mondayLayerEnd).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+
+                view.whenLayerView(tuesdayLayerEnd).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(wednesdayLayerEnd).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(thursdayLayerEnd).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(fridayLayerEnd).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(saturdayLayerEnd).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+                view.whenLayerView(sundayLayerEnd).then(function (layerView) {
+                    let highlight;
+                    // listen for the pointer-move event on the View
+                    view.on("pointer-move", function (event) {
+                        // Perform a hitTest on the View
+                        view.hitTest(event).then(function (event) {
+                            // Make sure graphic has a popupTemplate
+                            let results = event.results.filter(function (result) {
+                                return result.graphic.layer.popupTemplate;
+                            });
+                            let result = results[0];
+                            highlight && highlight.remove();
+                            // Update the graphic of the Feature widget
+                            // on pointer-move with the result
+                            if (result) {
+                                feature.graphic = result.graphic;
+                                highlight = layerView.highlight(result.graphic);
+                            } else {
+                                feature.graphic = graphic;
+                            }
+                        });
+                    });
+                });
+
+            });
+
+
+
+            //add event listeners to the drop down menus and form for radio buttons
+            //layers are either hidden or made visible depending on selection. i.e. if Wednesday is selected, 
+            //wednesday layer is made visible while all other layers are hidden
+            //only one layer can be visible at a time
+
+
+            //array for radio buttons - starting or ending stations selection from form and radio buttons
+            let radios = document.forms["stationsForm"].elements["stations"];
+
+            for (let i = 0, max = radios.length; i < max; i++) {
+
+                radios[i].addEventListener("change", function (event) {
+                    const value = event.target.value;
+                    let day = document.getElementById("days").value;
+
+                    //console.log(day);
+
+                    if (value == "starting") {
+                        starting(day);
+                    }
+                    else if (value == "ending") {
+                        ending(day);
+                    }
+                });
+            }
+
+            //day of the week selection
+            let daySelect = document.getElementById("days");
+
+            let radioValue = "starting";
+
+            //event listener for changing day of the week
+            daySelect.addEventListener("change", function (event) {
+                const value = event.target.value;
+
+                for (let i = 0, max = radios.length; i < max; i++) {
+                    //console.log(radios.value);
+                    radioValue = radios.value;
+                }
+
+                //console.log(radioValue + " in day");
+
+                if (radioValue == "starting") {
+                    starting(value)
+                }
+
+                else if (radioValue == "ending") {
+                    ending(value);
+                }
+            });
+
+
+            //function for displaying starting stations
+            function starting(day) {
+                switch (day) {
+                    case "all-days":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = true;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;;
+                        break;
+
+                    case "monday":
+                        mondayLayer.visible = true;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "tuesday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = true;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "wednesday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = true;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "thursday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = true;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "friday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = true;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "saturday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = true;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "sunday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = true;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+                }
+            }
+
+            //function for displaying ending stations
+            function ending(day) {
+                switch (day) {
+                    case "all-days":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = true;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "monday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = true;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "tuesday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = true;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "wednesday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = true;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "thursday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = true;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "friday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = true;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "saturday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = true;
+                        sundayLayerEnd.visible = false;
+                        break;
+
+                    case "sunday":
+                        mondayLayer.visible = false;
+                        tuesdayLayer.visible = false;
+                        wednesdayLayer.visible = false;
+                        thursdayLayer.visible = false;
+                        fridayLayer.visible = false;
+                        saturdayLayer.visible = false;
+                        sundayLayer.visible = false;
+                        metroBikeStationsLayer.visible = false;
+
+                        metroBikeStationsLayerEnd.visible = false;
+                        mondayLayerEnd.visible = false;
+                        tuesdayLayerEnd.visible = false;
+                        wednesdayLayerEnd.visible = false;
+                        thursdayLayerEnd.visible = false;
+                        fridayLayerEnd.visible = false;
+                        saturdayLayerEnd.visible = false;
+                        sundayLayerEnd.visible = true;
+                        break;
+                }
+            }
+
+        });//closing script tag
+    </script>
+</head>
+
+<!--begin the html body. "viewDiv" is the container for the map and matches the id that is passed to the MapView's container property in the constructor.-->
+<div id="feature-node" class="esri-widget"></div>
+<div id="viewDiv">
+    <div id="menu" class="esri-widget padding">
+
+        <!--form with radio buttons to select starting or ending stations-->
+        <br>
+        <form name="stationsForm">
+            <input type="radio" name="stations" value="starting" id="starting" checked>Originating Stations
+            <input type="radio" name="stations" value="ending" id="ending">Ending Stations
+        </form>
+
+        <br>
+
+
+        <label>Day of the Week: </label>
+        <!--drop down menu for selecting general overview or day of the week. The id "days" has an event listener to detect selection-->
+        <select class="esri-widget" id="days">
+            <option value="all-days">All Days</option>
+            <option value="monday">Monday</option>
+            <option value="tuesday">Tuesday</option>
+            <option value="wednesday">Wednesday</option>
+            <option value="thursday">Thursday</option>
+            <option value="friday">Friday</option>
+            <option value="saturday">Saturday</option>
+            <option value="sunday">Sunday</option>
+        </select>
+    </div>
+
+</div>
+
+</body>
+
+</html>
