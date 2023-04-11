@@ -27,7 +27,6 @@ When clicking on the filtered stations the window will display:
 * Average amount of trips of that day
 
 ## Technologies Used
-* Google's Map API
 * Google Sheets
 * ArcGIS API
 * Javascript, Javascript API, HTML and CSS
