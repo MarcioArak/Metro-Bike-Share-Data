@@ -3,6 +3,8 @@
 ## Application
 [Metro Bike Share App](https://la-metro-bike-station-app.netlify.app/)
 
+![alt text](https://github.com/MarcioArak/Metro-Bike-Share-Data/blob/main/app_image.png)
+
 ## Overview 
 Part of the LA County Vision 0 Project. Vision Zero is a strategy to eliminate all traffic fatalities and severe injuries, while increasing safe, healthy, equitable mobility for all. First implemented in Sweden in the 1990s, Vision Zero has proved successful across Europe — and now it’s gaining momentum in major American cities.
 
